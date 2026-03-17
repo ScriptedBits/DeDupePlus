@@ -3,7 +3,10 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.5+-orange)](https://www.riverbankcomputing.com/software/pyqt/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+-
 [![GitHub release](https://img.shields.io/github/v/release/ScriptedBits/DeDupePlus?color=green)](https://github.com/ScriptedBits/DeDupePlus/releases)
+![GitHub All Releases](https://img.shields.io/github/downloads/ScriptedBits/DeDupePlus/total)
+![GitHub issues](https://img.shields.io/github/issues/ScriptedBits/DeDupePlus)
 
 **DeDupe+** is a cross-platform desktop application that helps you find and remove **duplicate files** by intelligently matching filenames — even when they have different extensions, quality tags (4K, HDR, WEB-DL), years in parentheses/brackets, or minor variations.
 
