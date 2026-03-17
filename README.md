@@ -40,20 +40,10 @@ https://github.com/ScriptedBits/DeDupePlus
 
 ## Screenshots
 
-### Light Mode
-
-![Light mode screenshot](https://via.placeholder.com/800x500/ffffff/000000?text=Light+Mode+Screenshot)  
-*(Replace with real screenshot)*
-
 ### Dark Mode
+ 
+<img width="824" height="547" alt="DeDupe+ main screen" src="https://github.com/user-attachments/assets/542db951-9306-4763-bf06-6917253c1c64" />
 
-![Dark mode screenshot](https://via.placeholder.com/800x500/2b2b2b/dddddd?text=Dark+Mode+Screenshot)  
-*(Replace with real screenshot)*
-
-### Duplicate Groups View
-
-![Duplicates view](https://via.placeholder.com/800x500/1e1e1e/dddddd?text=Duplicate+Groups+Example)  
-*(Replace with real screenshot)*
 
 ## Requirements
 
