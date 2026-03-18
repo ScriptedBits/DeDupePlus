@@ -47,11 +47,10 @@ from PyQt6.QtWidgets import (
     QMessageBox, QProgressBar, QDialog, QFormLayout, QMenuBar, QStatusBar,
     QCheckBox, QGroupBox, QComboBox, QTextEdit
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QDateTime
+from PyQt6.QtGui import QColor 
 
-
-__version__ = "1.5"
+__version__ = "1.6"
 
 
 def normalize_filename(filename: str) -> str:
@@ -70,24 +69,20 @@ class ExtensionsDialog(QDialog):
         self.setWindowTitle("Filter Extensions")
         self.setMinimumWidth(520)
         layout = QVBoxLayout(self)
-
         form = QFormLayout()
         self.include_edit = QLineEdit(current_include)
-        self.include_edit.setPlaceholderText("e.g. .mp4,.mkv,.srt  (blank = all)")
+        self.include_edit.setPlaceholderText("e.g. .mp4,.mkv,.srt (blank = all)")
         form.addRow("Only include these extensions:", self.include_edit)
-
         self.exclude_edit = QLineEdit(current_exclude)
         self.exclude_edit.setPlaceholderText("e.g. .jpg,.txt,.nfo,.db")
         form.addRow("Exclude these extensions:", self.exclude_edit)
-
         self.recursive_cb = QCheckBox("Search subfolders (recursive)")
         self.recursive_cb.setChecked(recursive)
         form.addRow(self.recursive_cb)
-
         layout.addLayout(form)
 
-        # Presets
-        presets_group = QGroupBox("Quick Presets")
+        # Changed label text
+        presets_group = QGroupBox("Quick Include Presets")
         presets_layout = QVBoxLayout()
 
         self.video_cb = QCheckBox("Video files (.mp4, .mkv, .avi, .mov, ...)")
@@ -95,7 +90,7 @@ class ExtensionsDialog(QDialog):
         presets_layout.addWidget(self.video_cb)
         presets_layout.addWidget(self.rom_cb)
 
-        apply_presets_btn = QPushButton("Apply Selected Presets to Include")
+        apply_presets_btn = QPushButton("Add Selected Presets to Include")
         apply_presets_btn.clicked.connect(self.apply_presets)
         presets_layout.addWidget(apply_presets_btn)
 
@@ -113,7 +108,8 @@ class ExtensionsDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def apply_presets(self):
-        current = set(e.strip().lower() for e in self.include_edit.text().split(",") if e.strip())
+        # Start fresh — do NOT read existing content
+        current = set()
 
         if self.video_cb.isChecked():
             video = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".m4v", ".ts", ".m2ts"}
@@ -123,7 +119,9 @@ class ExtensionsDialog(QDialog):
             roms = {".gb", ".gbc", ".gba", ".nes", ".sfc", ".smc", ".n64", ".z64", ".nds", ".rom", ".zip"}
             current.update(roms)
 
-        self.include_edit.setText(", ".join(sorted(current)) if current else "")
+        # Write only the selected presets (sorted)
+        new_text = ", ".join(sorted(current)) if current else ""
+        self.include_edit.setText(new_text)
 
     def get_settings(self):
         inc = [e.strip().lower() for e in self.include_edit.text().split(",") if e.strip()]
@@ -210,50 +208,102 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About DeDupe+")
-        self.setMinimumWidth(480)
-        self.setMinimumHeight(280)
+        self.setMinimumSize(540, 420)
+        
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
 
+        # ── Header ───────────────────────────────────────────────
         title = QLabel("DeDupe+")
-        title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        title.setStyleSheet("font-size: 28px; font-weight: bold;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        version_label = QLabel(f"Version {__version__}")
-        version_label.setStyleSheet("font-size: 14px; color: #555;")
-        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(version_label)
+        version = QLabel(f"Version {__version__}")
+        version.setStyleSheet("font-size: 15px; color: #888888;")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(version)
 
         layout.addSpacing(16)
 
-        created = QLabel("Created by ScriptedBits")
-        created.setStyleSheet("font-size: 15px; font-weight: bold;")
-        created.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(created)
-
-        desc = QLabel("Created to help find duplicate files across Windows, Linux and Mac.")
+        # ── Description ──────────────────────────────────────────
+        desc = QLabel(
+            "A fast duplicate file finder that intelligently matches files\n"
+            "by ignoring years, quality tags (4K, HDR, WEB-DL, etc.),\n"
+            "case sensitivity and common brackets/parentheses noise.\n\n"
+            "Great for cleaning up movies, TV shows, music, ROMs,\n"
+            "photos and general file clutter."
+        )
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(desc)
 
         layout.addSpacing(20)
 
-        link = QLabel('<a href="https://github.com/ScriptedBits/DeDupePlus">https://github.com/ScriptedBits/DeDupePlus</a>')
-        link.setOpenExternalLinks(True)
-        link.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(link)
+        # ── Copyright & License ──────────────────────────────────
+        copy_label = QLabel(
+            "© 2026 ScriptedBits\n"
+            "Released under the GNU General Public License v3\n"
+            "This program is provided AS-IS with NO WARRANTY."
+        )
+        copy_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        copy_label.setStyleSheet("color: #999999; font-size: 13px;")
+        layout.addWidget(copy_label)
 
-        layout.addStretch()
+        layout.addSpacing(18)
 
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        close_btn.setFixedWidth(120)
+        # ── Prominent GitHub Link (larger & more noticeable) ─────
+        gh_container = QWidget()
+        gh_layout = QHBoxLayout(gh_container)
+        gh_layout.setContentsMargins(0, 0, 0, 0)
+        gh_layout.setSpacing(0)
+
+        gh_label = QLabel(
+            '<a href="https://github.com/ScriptedBits/DeDupePlus" '
+            'style="color: #58a6ff; text-decoration: none;">'
+            'github.com/ScriptedBits/DeDupePlus'
+            '</a>'
+        )
+        gh_label.setOpenExternalLinks(True)
+        gh_label.setStyleSheet("""
+            font-size: 17px;
+            font-weight: bold;
+            padding: 10px 18px;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #58a6ff;
+        """)
+        gh_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        gh_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        gh_layout.addStretch()
+        gh_layout.addWidget(gh_label)
+        gh_layout.addStretch()
+
+        layout.addWidget(gh_container)
+
+        layout.addSpacing(20)
+
+        # ── Close button ─────────────────────────────────────────
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.setMinimumWidth(120)
+        close_btn.setStyleSheet("font-size: 14px; padding: 8px;")
+        close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
+
         layout.addLayout(btn_layout)
+
+        # Optional: try to center the dialog on parent window
+        if parent and parent.isVisible():
+            self.move(
+                parent.x() + (parent.width() - self.width()) // 2,
+                parent.y() + (parent.height() - self.height()) // 2
+            )
 
 class ScanThread(QThread):
     progress = pyqtSignal(int, str)
@@ -319,7 +369,7 @@ class DuplicateFinder(QMainWindow):
         self.include_exts = self.settings.value("include_exts", [], type=list)
         self.exclude_exts = self.settings.value("exclude_exts", [], type=list)
         self.recursive = self.settings.value("recursive", True, type=bool)
-        self.theme = self.settings.value("theme", "light", type=str)
+        self.theme = self.settings.value("theme", "dark", type=str)
         last_path = self.settings.value("last_path", os.getcwd(), type=str)
 
         # UI
@@ -355,6 +405,10 @@ class DuplicateFinder(QMainWindow):
         self.tree.setColumnWidth(1, 300)
         self.tree.setColumnWidth(2, 400)
         self.tree.setAlternatingRowColors(True)
+        
+        self.tree.setSortingEnabled(True)
+        self.tree.sortItems(3, Qt.SortOrder.DescendingOrder)
+        
         layout.addWidget(self.tree)
 
         btn_row = QHBoxLayout()
@@ -370,6 +424,16 @@ class DuplicateFinder(QMainWindow):
 
         btn_row.addWidget(select_all)
         btn_row.addWidget(deselect_all)
+        btn_row.addStretch()
+        btn_row.addWidget(delete_btn)
+        btn_row.addWidget(refresh)
+        
+        # NEW: Save Results button
+        save_btn = QPushButton("💾 Save Results")
+        save_btn.clicked.connect(self.save_results)
+        save_btn.setStyleSheet("background: #007bff; color: white; font-weight: bold;")
+        btn_row.addWidget(save_btn)
+
         btn_row.addStretch()
         btn_row.addWidget(delete_btn)
         btn_row.addWidget(refresh)
@@ -401,6 +465,7 @@ class DuplicateFinder(QMainWindow):
 
         # Apply loaded theme
         self.apply_theme()
+        self.update_filter_status()  # good to call after load
 
     def closeEvent(self, event):
         # Save settings on close
@@ -455,6 +520,93 @@ class DuplicateFinder(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.include_exts, self.exclude_exts, self.recursive = dlg.get_settings()
             self.update_filter_status()
+
+    def save_results(self):
+        """Export current duplicate results to HTML and/or CSV"""
+        if not self.current_groups:
+            QMessageBox.information(self, "No Results", "Run a scan first to generate results.")
+            return
+
+        # Let user choose base filename and location
+        default_name = f"DeDupe+_results_{QDateTime.currentDateTime().toString('yyyyMMdd_hhmmss')}"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Results As...",
+            default_name,
+            "HTML File (*.html);;CSV File (*.csv);;All Files (*.*)"
+        )
+
+        if not file_path:
+            return  # user canceled
+
+        # Determine format from chosen extension
+        ext = os.path.splitext(file_path)[1].lower()
+
+        if ext == ".html":
+            self._export_html(file_path)
+        elif ext == ".csv":
+            self._export_csv(file_path)
+        else:
+            # If user picked "All Files" or no extension → default to HTML
+            file_path = file_path if file_path.endswith(".html") else file_path + ".html"
+            self._export_html(file_path)
+
+        QMessageBox.information(self, "Export Complete", f"Results saved to:\n{file_path}")
+
+    def _export_html(self, path):
+        timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>DeDupe+ Results</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                h1 {{ color: #333; }}
+                table {{ border-collapse: collapse; width: 100%; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                th {{ background-color: #f2f2f2; }}
+                tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                .group {{ background-color: #e6f3ff; font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <h1>DeDupe+ Duplicate Report</h1>
+            <p>Generated: {timestamp}</p>
+            <table>
+                <tr><th>Group Key</th><th>Filename</th><th>Full Path</th><th>Size (MB)</th></tr>
+        """
+
+        for key, files in self.current_groups.items():
+            if len(files) < 2:
+                continue
+            html += f'<tr class="group"><td colspan="4">{key}</td></tr>'
+            for fullpath, size, basename in sorted(files, key=lambda x: x[1], reverse=True):
+                mb = round(size / (1024 * 1024), 2)
+                html += f"<tr><td></td><td>{basename}</td><td>{fullpath}</td><td>{mb:.2f}</td></tr>"
+
+        html += """
+            </table>
+        </body>
+        </html>
+        """
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+
+    def _export_csv(self, path):
+        import csv
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Group Key", "Filename", "Full Path", "Size (MB)"])
+
+            for key, files in self.current_groups.items():
+                if len(files) < 2:
+                    continue
+                for fullpath, size, basename in files:
+                    mb = round(size / (1024 * 1024), 2)
+                    writer.writerow([key, basename, fullpath, f"{mb:.2f}"])
 
     def show_theme_dialog(self):
         dlg = ThemeDialog(self, self.theme)
