@@ -1,17 +1,14 @@
 """
     DeDupe+
-    Copyright (C) 2026  ScriptedBits
-
+    Copyright (C) 2026 ScriptedBits
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
-
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
     GNU General Public License for more details.
-
     You should have received a copy of the GNU General Public License
     along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
@@ -19,39 +16,31 @@
    ===========================================================================================
                           DeDupe+
    ===========================================================================================
-	This script downloads the latest stable / dev releases of emulators 
-    and their versions for Windows x86_64, Mac & Linux from their official websites or github.
-
-    GitHub Repository: https://github.com/ScriptedBits/DeDupePlus
-
-    This script is provided as-is without any warranty or 
+    This script is provided as-is without any warranty or
     guarantee of functionality.
-
-    This script is for personal use only to automate the process of de deuplication of files on your own systems 
-    
+    This script is for personal use only to automate the process of de deuplication of files on your own systems
+   
     Author: ScriptedBits
     License: GPL3
-
     For any support or issues, Please visit the github respository
     ==========================================================================================
 """
 
-
 import sys
 import os
 import re
+import time
 from collections import defaultdict
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem,
-    QMessageBox, QProgressBar, QDialog, QFormLayout, QMenuBar, QStatusBar,
-    QCheckBox, QGroupBox, QComboBox, QTextEdit
+    QMessageBox, QDialog, QFormLayout, QMenuBar, QStatusBar,
+    QCheckBox, QGroupBox, QComboBox, QTextEdit, QProgressBar
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QDateTime
-from PyQt6.QtGui import QColor 
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QDateTime, QSize, QTimer
+from PyQt6.QtGui import QColor, QMovie, QActionGroup
 
-__version__ = "1.6"
-
+__version__ = "1.7.9"
 
 def normalize_filename(filename: str) -> str:
     base = os.path.splitext(filename)[0]
@@ -67,81 +56,121 @@ class ExtensionsDialog(QDialog):
     def __init__(self, parent=None, current_include="", current_exclude="", recursive=True):
         super().__init__(parent)
         self.setWindowTitle("Filter Extensions")
-        self.setMinimumWidth(520)
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
+        self.setMinimumSize(620, 420)  # Clean size for content
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(16, 12, 16, 12)
+
+        # Top form: include + exclude fields + recursive
+        form_layout = QFormLayout()
+        form_layout.setSpacing(8)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
         self.include_edit = QLineEdit(current_include)
-        self.include_edit.setPlaceholderText("e.g. .mp4,.mkv,.srt (blank = all)")
-        form.addRow("Only include these extensions:", self.include_edit)
+        self.include_edit.setPlaceholderText("e.g. .mp4,.mkv,.avi (blank = all)")
+        form_layout.addRow("Only include extensions:", self.include_edit)
+
         self.exclude_edit = QLineEdit(current_exclude)
-        self.exclude_edit.setPlaceholderText("e.g. .jpg,.txt,.nfo,.db")
-        form.addRow("Exclude these extensions:", self.exclude_edit)
+        self.exclude_edit.setPlaceholderText("e.g. .srt,.jpg,.txt (optional)")
+        form_layout.addRow("Exclude extensions:", self.exclude_edit)
+
         self.recursive_cb = QCheckBox("Search subfolders (recursive)")
         self.recursive_cb.setChecked(recursive)
-        form.addRow(self.recursive_cb)
-        layout.addLayout(form)
+        form_layout.addRow(self.recursive_cb)
 
-        # Changed label text
+        main_layout.addLayout(form_layout)
+
+        # Include presets group
         presets_group = QGroupBox("Quick Include Presets")
         presets_layout = QVBoxLayout()
+        presets_layout.setSpacing(6)
 
         self.video_cb = QCheckBox("Video files (.mp4, .mkv, .avi, .mov, ...)")
         self.rom_cb = QCheckBox("Retro ROMs (.gb, .gba, .nes, .sfc, .n64, ...)")
+        self.office_cb = QCheckBox("Office documents (.docx, .xlsx, .pptx, .odt, .pdf ...)")
+        self.music_cb = QCheckBox("Music / Audio files (.mp3, .flac, .m4a, .wav, ...)")
+        self.archive_cb = QCheckBox("Archives / Zips (.zip, .rar, .7z, .tar.gz, ...)")
+
         presets_layout.addWidget(self.video_cb)
         presets_layout.addWidget(self.rom_cb)
+        presets_layout.addWidget(self.office_cb)
+        presets_layout.addWidget(self.music_cb)
+        presets_layout.addWidget(self.archive_cb)
 
-        apply_presets_btn = QPushButton("Add Selected Presets to Include")
-        apply_presets_btn.clicked.connect(self.apply_presets)
-        presets_layout.addWidget(apply_presets_btn)
+        # Buttons row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
 
+        apply_btn = QPushButton("Add Selected Presets")
+        apply_btn.setStyleSheet("background: #28a745; color: white;")
+        apply_btn.clicked.connect(self.apply_presets)
+        btn_row.addWidget(apply_btn)
+
+        clear_btn = QPushButton("Clear / Reset")
+        clear_btn.setStyleSheet("color: #dc3545;")
+        clear_btn.clicked.connect(self.clear_presets)
+        btn_row.addWidget(clear_btn)
+
+        presets_layout.addLayout(btn_row)
         presets_group.setLayout(presets_layout)
-        layout.addWidget(presets_group)
+        main_layout.addWidget(presets_group)
 
-        btn_layout = QHBoxLayout()
-        ok = QPushButton("Save")
-        ok.clicked.connect(self.accept)
-        cancel = QPushButton("Cancel")
-        cancel.clicked.connect(self.reject)
-        btn_layout.addStretch()
-        btn_layout.addWidget(ok)
-        btn_layout.addWidget(cancel)
-        layout.addLayout(btn_layout)
+        main_layout.addStretch()
+
+        # Save/Cancel
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addStretch()
+
+        save_btn = QPushButton("Save")
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self.accept)
+        bottom_layout.addWidget(save_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        bottom_layout.addWidget(cancel_btn)
+
+        main_layout.addLayout(bottom_layout)
 
     def apply_presets(self):
-        # Start fresh — do NOT read existing content
         current = set()
-
         if self.video_cb.isChecked():
-            video = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".m4v", ".ts", ".m2ts"}
-            current.update(video)
-
+            current.update({".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".m4v", ".ts", ".m2ts"})
         if self.rom_cb.isChecked():
-            roms = {".gb", ".gbc", ".gba", ".nes", ".sfc", ".smc", ".n64", ".z64", ".nds", ".rom", ".zip"}
-            current.update(roms)
-
-        # Write only the selected presets (sorted)
+            current.update({".gb", ".gbc", ".gba", ".nes", ".sfc", ".smc", ".n64", ".z64", ".nds", ".rom", ".zip"})
+        if self.office_cb.isChecked():
+            current.update({".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".xltx", ".ppt", ".pptx", ".pptm", ".odt", ".ods", ".odp", ".rtf", ".pdf"})
+        if self.music_cb.isChecked():
+            current.update({".mp3", ".m4a", ".aac", ".flac", ".wav", ".aiff", ".aif", ".ogg", ".oga", ".wma", ".opus"})
+        if self.archive_cb.isChecked():
+            current.update({".zip", ".zipx", ".rar", ".7z", ".tar", ".gz", ".tgz", ".tar.gz", ".bz2", ".tar.bz2", ".iso"})
         new_text = ", ".join(sorted(current)) if current else ""
         self.include_edit.setText(new_text)
 
+    def clear_presets(self):
+        self.video_cb.setChecked(False)
+        self.rom_cb.setChecked(False)
+        self.office_cb.setChecked(False)
+        self.music_cb.setChecked(False)
+        self.archive_cb.setChecked(False)
+        self.include_edit.clear()
+
     def get_settings(self):
         inc = [e.strip().lower() for e in self.include_edit.text().split(",") if e.strip()]
-        exc = [e.strip().lower() for e in self.exclude_edit.text().split(",") if e.strip()]
         rec = self.recursive_cb.isChecked()
-        return inc, exc, rec
-
-
+        return inc, rec  # No exclude returned
+        
 class ThemeDialog(QDialog):
     def __init__(self, parent=None, current_theme="light"):
         super().__init__(parent)
         self.setWindowTitle("Theme Settings")
         layout = QVBoxLayout(self)
-
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Standard (Light)", "Dark"])
         self.theme_combo.setCurrentIndex(0 if current_theme == "light" else 1)
         layout.addWidget(QLabel("Application Theme:"))
         layout.addWidget(self.theme_combo)
-
         btn_layout = QHBoxLayout()
         ok = QPushButton("Save & Apply")
         ok.clicked.connect(self.accept)
@@ -155,66 +184,54 @@ class ThemeDialog(QDialog):
     def get_theme(self):
         return "dark" if self.theme_combo.currentIndex() == 1 else "light"
 
-
 class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DeDupe+ Help & Examples")
         self.resize(680, 520)
         layout = QVBoxLayout(self)
-
         text = QTextEdit()
         text.setReadOnly(True)
         text.setMarkdown("""
 **DeDupe+ – Quick Help & Examples**
-
-**Main purpose**  
+**Main purpose**
 Find files with similar names (ignoring year tags, quality tags like 4K/1080p, etc.) and let you delete duplicates.
-
-**How name matching works**  
-- file1.mp4  &  file1.srt  → considered duplicates  
-- movie (2025).mkv  &  movie 4k (2025).mp4  → considered duplicates  
+**How name matching works**
+- file1.mp4 & file1.srt → considered duplicates
+- movie (2025).mkv & movie 4k (2025).mp4 → considered duplicates
 - Ignores case, years in (), [], common video tags (4k, hdr, web-dl, etc.)
-
-**Basic usage**  
-1. Select folder/drive  
-2. (optional) Set filters in **Options → Filter Extensions**  
-3. Click **Start Scan**  
+**Basic usage**
+1. Select folder/drive
+2. (optional) Set filters in **Options → Filter Extensions**
+3. Click **Start Scan**
 4. Check files to delete → **Delete Selected**
-
-**Extension filtering examples**  
-- Only videos: include `.mp4, .mkv, .avi, .mov`  
-- Skip thumbnails & logs: exclude `.jpg, .png, .txt, .nfo, .log`  
+**Extension filtering examples**
+- Only videos: include `.mp4, .mkv, .avi, .mov`
+- Skip thumbnails & logs: exclude `.jpg, .png, .txt, .nfo, .log`
 - Scan everything except junk: leave include blank, exclude `.jpg,.png,.db,.tmp`
-
-**Presets**  
+**Presets**
 Use the checkboxes in the extensions dialog for quick setup.
-
-**Theme**  
+**Theme**
 Change in **Options → Theme** – setting saved for next launch.
-
-**Need help?**  
-Report issues or suggest features on GitHub:  
+**Need help?**
+Report issues or suggest features on GitHub:
 https://github.com/ScriptedBits/DeDupePlus
         """)
         layout.addWidget(text)
-
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
-
 
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About DeDupe+")
         self.setMinimumSize(540, 420)
-        
+       
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(14)
 
-        # ── Header ───────────────────────────────────────────────
         title = QLabel("DeDupe+")
         title.setStyleSheet("font-size: 28px; font-weight: bold;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -227,7 +244,6 @@ class AboutDialog(QDialog):
 
         layout.addSpacing(16)
 
-        # ── Description ──────────────────────────────────────────
         desc = QLabel(
             "A fast duplicate file finder that intelligently matches files\n"
             "by ignoring years, quality tags (4K, HDR, WEB-DL, etc.),\n"
@@ -241,7 +257,6 @@ class AboutDialog(QDialog):
 
         layout.addSpacing(20)
 
-        # ── Copyright & License ──────────────────────────────────
         copy_label = QLabel(
             "© 2026 ScriptedBits\n"
             "Released under the GNU General Public License v3\n"
@@ -253,7 +268,6 @@ class AboutDialog(QDialog):
 
         layout.addSpacing(18)
 
-        # ── Prominent GitHub Link (larger & more noticeable) ─────
         gh_container = QWidget()
         gh_layout = QHBoxLayout(gh_container)
         gh_layout.setContentsMargins(0, 0, 0, 0)
@@ -286,19 +300,15 @@ class AboutDialog(QDialog):
 
         layout.addSpacing(20)
 
-        # ── Close button ─────────────────────────────────────────
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-
         close_btn = QPushButton("Close")
         close_btn.setMinimumWidth(120)
         close_btn.setStyleSheet("font-size: 14px; padding: 8px;")
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
-
         layout.addLayout(btn_layout)
 
-        # Optional: try to center the dialog on parent window
         if parent and parent.isVisible():
             self.move(
                 parent.x() + (parent.width() - self.width()) // 2,
@@ -307,72 +317,88 @@ class AboutDialog(QDialog):
 
 class ScanThread(QThread):
     progress = pyqtSignal(int, str)
-    finished = pyqtSignal(dict)
+    finished = pyqtSignal(object)
 
-    def __init__(self, root_dir: str, include_exts: list, exclude_exts: list, recursive: bool):
+    def __init__(self, root_dir: str, include_exts: list, exclude_exts: list = None, recursive: bool = True):
         super().__init__()
         self.root_dir = root_dir
         self.include_exts = include_exts
-        self.exclude_exts = exclude_exts
+        self.exclude_exts = exclude_exts or []
         self.recursive = recursive
 
     def run(self):
-            groups = defaultdict(list)
-            total_files = 0
+        groups = defaultdict(list)
+        total_files = 0
 
-            def should_include(name: str) -> bool:
-                ext = os.path.splitext(name)[1].lower()
-                if self.include_exts:
-                    return ext in self.include_exts
-                if self.exclude_exts:
-                    return ext not in self.exclude_exts
-                return True
+        def scan_dir(path):
+            nonlocal total_files
+            if self.isInterruptionRequested():
+                return
+            try:
+                entries = list(os.scandir(path))
+            except PermissionError:
+                return
 
-            for root, dirs, files in os.walk(self.root_dir):
-                if not self.recursive and root != self.root_dir:
-                    break
+            for entry in entries:
+                if self.isInterruptionRequested():
+                    return
 
-                # Emit before processing files in this folder
-                self.progress.emit(total_files, root)
-
-                for f in files:
+                if entry.is_file(follow_symlinks=False):
                     total_files += 1
 
-                    # Update more frequently (every 50–100 files)
-                    if total_files % 100 == 0:
-                        self.progress.emit(total_files, root)
+                    if total_files % 20 == 0:
+                        self.progress.emit(total_files, path)
+                        QThread.msleep(1)
 
-                    if should_include(f):
+                    f = entry.name
+                    if f.startswith('.'):
+                        ext = f.lower() if '.' not in f[1:] else os.path.splitext(f)[1].lower()
+                    else:
+                        ext = os.path.splitext(f)[1].lower()
+
+                    include = (
+                        (not self.include_exts and not self.exclude_exts) or
+                        (self.include_exts and ext in self.include_exts) or
+                        (not self.include_exts and self.exclude_exts and ext not in self.exclude_exts)
+                    )
+
+                    if include:
                         key = normalize_filename(f)
-                        fullpath = os.path.join(root, f)
                         try:
-                            size = os.path.getsize(fullpath)
+                            size = entry.stat().st_size
                         except:
                             size = 0
-                        groups[key].append((fullpath, size, f))
+                        groups[key].append((entry.path, size, f))
 
-                # Optional: emit again after finishing a folder
-                # self.progress.emit(total_files, root)
+                elif self.recursive and entry.is_dir(follow_symlinks=False):
+                    scan_dir(entry.path)
 
+        scan_dir(self.root_dir)
+
+        if self.isInterruptionRequested():
+            self.finished.emit(None)
+        else:
             duplicates = {k: v for k, v in groups.items() if len(v) > 1}
             self.finished.emit(duplicates)
-
+            
 class DuplicateFinder(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"🗂️ DeDupe+ v{__version__}")
         self.resize(1100, 700)
+        self.checkmark_svg = self._write_checkmark_svg()
 
         self.settings = QSettings("ScriptedBits", "DeDupePlus")
+        # Progress style choices (stored in settings)
+        self.progress_style = self.settings.value("progress_style", "animated_gif", type=str)
+        # Possible values: "default_bar", "animated_gif", "emoji", "none"
 
-        # Load saved settings
         self.include_exts = self.settings.value("include_exts", [], type=list)
         self.exclude_exts = self.settings.value("exclude_exts", [], type=list)
         self.recursive = self.settings.value("recursive", True, type=bool)
         self.theme = self.settings.value("theme", "dark", type=str)
         last_path = self.settings.value("last_path", os.getcwd(), type=str)
 
-        # UI
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -382,33 +408,77 @@ class DuplicateFinder(QMainWindow):
         self.path_edit = QLineEdit(last_path)
         browse = QPushButton("📁 Browse")
         browse.clicked.connect(self.browse)
-        options = QPushButton("⚙️ Options")
-
-
-        scan = QPushButton("🔍 Start Scan")
-        scan.clicked.connect(self.start_scan)
-        scan.setStyleSheet("background: #28a745; color: white; font-weight: bold;")
+ 
+        self.scan_btn = QPushButton("🔍 Start Scan")
+        self.scan_btn.clicked.connect(self.start_scan)
+        self.scan_btn.setStyleSheet("background: #28a745; color: white; font-weight: bold;")
+        
+        # Stop Scan button (hidden by default)
+        self.stop_btn = QPushButton("⏹️ Stop Scan")
+        self.stop_btn.setStyleSheet("background: #dc3545; color: white; font-weight: bold;")
+        self.stop_btn.clicked.connect(self.stop_scan)
+        self.stop_btn.setVisible(False)  # hidden until scan starts
 
         top.addWidget(lbl)
         top.addWidget(self.path_edit, 1)
         top.addWidget(browse)
-        top.addWidget(scan)
+        top.addWidget(self.scan_btn)
+        top.addWidget(self.stop_btn)
+
         layout.addLayout(top)
 
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        layout.addWidget(self.progress)
+        # Container for progress indicators
+        self.progress_container = QWidget()
+        self.progress_layout = QHBoxLayout(self.progress_container)
+        self.progress_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.progress_container)
+
+        # Default bar (hidden by default)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(0)  # indeterminate
+        self.progress_layout.addWidget(self.progress_bar)
+
+        # Animated GIF
+        self.scan_movie = QMovie("folder.gif")  # or folder.jpg if it's animated
+        self.scan_movie.setScaledSize(QSize(48, 48))
+        self.scan_animation = QLabel()
+        self.scan_animation.setMovie(self.scan_movie)
+        self.scan_animation.setVisible(False)
+        self.progress_layout.addWidget(self.scan_animation, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # Emoji rotation label
+        self.emoji_label = QLabel()
+        self.emoji_label.setVisible(False)
+        self.progress_layout.addWidget(self.emoji_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        self.emoji_timer = QTimer(self)
+        self.emoji_timer.timeout.connect(self.update_emoji_animation)
+        self.emoji_icons = ["📁", "📂", "📁📂", "📂📁"]
+        self.emoji_index = 0
+        
+        # ascii label
+        self.ascii_label = QLabel()
+        self.ascii_label.setStyleSheet("font-family: monospace; font-size: 13px; letter-spacing: 1px; color: #007bff;")
+        self.ascii_label.setVisible(False)
+        self.progress_layout.addWidget(self.ascii_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.ascii_bar_timer = QTimer(self)
+        self.ascii_bar_timer.timeout.connect(self.update_ascii_bar)
+        self.ascii_bar_pos = 0
+        self.ascii_bar_direction = 1
+        self.ascii_bar_width = 80
+        self.ascii_bar_chunk = 6
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["✓", "Filename", "Full Path", "Size (MB)"])
-        self.tree.setColumnWidth(0, 50)
-        self.tree.setColumnWidth(1, 300)
-        self.tree.setColumnWidth(2, 400)
+        self.tree.setHeaderLabels(["Select files", "Filename", "Full Path", "Size (MB)"])
+        self.tree.setColumnWidth(0, 170)
+        self.tree.setColumnWidth(1, 250)
+        self.tree.setColumnWidth(2, 450)
         self.tree.setAlternatingRowColors(True)
-        
         self.tree.setSortingEnabled(True)
         self.tree.sortItems(3, Qt.SortOrder.DescendingOrder)
-        
+
         layout.addWidget(self.tree)
 
         btn_row = QHBoxLayout()
@@ -421,27 +491,20 @@ class DuplicateFinder(QMainWindow):
         delete_btn.setStyleSheet("background: #dc3545; color: white; font-weight: bold;")
         refresh = QPushButton("🔄 Clear Results")
         refresh.clicked.connect(lambda: self.tree.clear())
+        save_btn = QPushButton("💾 Save Results")
+        save_btn.clicked.connect(self.save_results)
+        save_btn.setStyleSheet("background: #007bff; color: white; font-weight: bold;")
 
         btn_row.addWidget(select_all)
         btn_row.addWidget(deselect_all)
         btn_row.addStretch()
-        btn_row.addWidget(delete_btn)
-        btn_row.addWidget(refresh)
-        
-        # NEW: Save Results button
-        save_btn = QPushButton("💾 Save Results")
-        save_btn.clicked.connect(self.save_results)
-        save_btn.setStyleSheet("background: #007bff; color: white; font-weight: bold;")
         btn_row.addWidget(save_btn)
-
         btn_row.addStretch()
         btn_row.addWidget(delete_btn)
         btn_row.addWidget(refresh)
         layout.addLayout(btn_row)
 
-        # Menu
         menubar = self.menuBar()
-
         file_menu = menubar.addMenu("File")
         file_menu.addAction("Open folder", self.browse)
         file_menu.addAction("Exit", self.close)
@@ -449,7 +512,25 @@ class DuplicateFinder(QMainWindow):
         options_menu = menubar.addMenu("Options")
         options_menu.addAction("Filter Extensions...", self.show_extensions_dialog)
         options_menu.addAction("Theme...", self.show_theme_dialog)
+        progress_menu = options_menu.addMenu("Progress Animation")
+        
+        progress_action_group = QActionGroup(self)
+        progress_action_group.setExclusive(True)
 
+        actions = {
+            "Default bar": "default_bar",
+            "Animated GIF (Animated folder)": "animated_gif",
+            "Emoji rotation (📁📂)": "emoji",
+            "Retro ASCII bar [████░░░░]": "ascii_bar",
+            "None (text only)": "none"
+        }
+        for label, value in actions.items():
+            action = progress_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(self.progress_style == value)
+            action.triggered.connect(lambda checked, v=value: self.set_progress_style(v))
+            progress_action_group.addAction(action)
+        
         help_menu = menubar.addMenu("Help")
         help_menu.addAction("Help / Examples", self.show_help)
         help_menu.addAction("About DeDupe+", self.show_about)
@@ -458,14 +539,61 @@ class DuplicateFinder(QMainWindow):
         self.setStatusBar(self.statusBar)
 
         self.scan_status_label = QLabel("Ready")
-        self.statusBar.addPermanentWidget(self.scan_status_label)   # right side
+        self.statusBar.addPermanentWidget(self.scan_status_label)
 
         self.thread = None
         self.current_groups = {}
 
-        # Apply loaded theme
         self.apply_theme()
-        self.update_filter_status()  # good to call after load
+        self.update_filter_status()
+
+    def _write_checkmark_svg(self):
+        import tempfile
+        path = os.path.join(tempfile.gettempdir(), "dedupe_plus_checkmark.svg")
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">'
+            '<rect width="14" height="14" rx="2" fill="#4a90d9"/>'
+            '<polyline points="2,7 6,11 12,3" '
+            'style="fill:none;stroke:white;stroke-width:2.5;'
+            'stroke-linecap:round;stroke-linejoin:round"/>'
+            '</svg>'
+        )
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(svg)
+        return path.replace(os.sep, '/')
+
+    def update_ascii_bar(self):
+        bar = ['░'] * self.ascii_bar_width
+        for i in range(self.ascii_bar_chunk):
+            idx = self.ascii_bar_pos + i
+            if 0 <= idx < self.ascii_bar_width:
+                bar[idx] = '█'
+        filled = ''.join(bar)
+        count_text = self.scan_status_label.text()
+        self.ascii_label.setText(f"[{filled}] {count_text}")
+
+        self.ascii_bar_pos += self.ascii_bar_direction
+        if self.ascii_bar_pos + self.ascii_bar_chunk >= self.ascii_bar_width:
+            self.ascii_bar_direction = -1
+        elif self.ascii_bar_pos <= 0:
+            self.ascii_bar_direction = 1
+
+    def stop_scan(self):
+        if self.thread and self.thread.isRunning():
+            self.thread.requestInterruption()  # Tell thread to stop
+            self.scan_status_label.setText("Stopping scan... please wait")
+            self.stop_btn.setEnabled(False)    # prevent multiple clicks
+            self.scan_btn.setEnabled(True)
+            QTimer.singleShot(10000, lambda: self.scan_status_label.setText("Scan stop timeout - restarting UI") if self.thread.isRunning() else None)
+
+    def update_emoji_animation(self):
+        self.emoji_index = (self.emoji_index + 1) % len(self.emoji_icons)
+        self.emoji_label.setText(f"{self.emoji_icons[self.emoji_index]} Scanning...")
+
+    def set_progress_style(self, style: str):
+        self.progress_style = style
+        self.settings.setValue("progress_style", style)
+        self.update_filter_status()  # optional: refresh status if needed
 
     def closeEvent(self, event):
         # Save settings on close
@@ -480,19 +608,41 @@ class DuplicateFinder(QMainWindow):
         app = QApplication.instance()
         if self.theme == "dark":
             app.setStyle("Fusion")
-            dark_sheet = """
-                QMainWindow, QDialog { background: #2b2b2b; color: #ddd; }
-                QWidget { background: #2b2b2b; color: #ddd; }
-                QTreeWidget { background: #1e1e1e; alternate-background-color: #282828; color: #ddd; }
-                QTreeWidget::item:selected { background: #4a90d9; }
-                QLineEdit, QComboBox, QCheckBox { background: #353535; color: #ddd; border: 1px solid #555; padding: 4px; }
-                QPushButton { background: #404040; color: #ddd; border: 1px solid #555; padding: 6px; }
-                QPushButton:hover { background: #505050; }
-                QProgressBar { background: #353535; color: #ddd; border: 1px solid #555; text-align: center; }
-                QProgressBar::chunk { background: #4a90d9; }
-                QStatusBar { background: #353535; color: #ddd; }
-                QMenuBar, QMenu { background: #2b2b2b; color: #ddd; }
-                QMenu::item:selected { background: #4a90d9; }
+            dark_sheet = f"""
+                QMainWindow, QDialog {{ background: #2b2b2b; color: #ddd; }}
+                QWidget {{ background: #2b2b2b; color: #ddd; }}
+                QTreeWidget {{ background: #1e1e1e; alternate-background-color: #282828; color: #ddd; }}
+                QTreeWidget::item:selected {{ background: #4a90d9; }}
+                QLineEdit, QComboBox, QCheckBox {{ background: #353535; color: #ddd; border: 1px solid #555; padding: 4px; }}
+                QPushButton {{ background: #404040; color: #ddd; border: 1px solid #555; padding: 6px; }}
+                QPushButton:hover {{ background: #505050; }}
+                QProgressBar {{ background: #353535; color: #ddd; border: 1px solid #555; text-align: center; }}
+                QProgressBar::chunk {{ background: #4a90d9; }}
+                QStatusBar {{ background: #353535; color: #ddd; }}
+                QMenuBar, QMenu {{ background: #2b2b2b; color: #ddd; }}
+                QMenu::item:selected {{ background: #4a90d9; }}
+                QTreeWidget::indicator {{
+                    width: 18px;
+                    height: 18px;
+                }}
+                QTreeWidget::indicator:unchecked {{
+                    background: #555555;
+                    border: 2px solid #aaaaaa;
+                    border-radius: 3px;
+                }}
+                QTreeWidget::indicator:unchecked:hover {{
+                    background: #666666;
+                    border: 2px solid #cccccc;
+                    border-radius: 3px;
+                }}
+                QTreeWidget::indicator:checked {{
+                    image: url("{self.checkmark_svg}");
+                    border: none;
+                }}
+                QTreeWidget::indicator:checked:hover {{
+                    image: url("{self.checkmark_svg}");
+                    border: none;
+                }}
             """
             app.setStyleSheet(dark_sheet)
             palette = app.palette()
@@ -514,11 +664,17 @@ class DuplicateFinder(QMainWindow):
         dlg = ExtensionsDialog(
             self,
             ", ".join(self.include_exts),
-            ", ".join(self.exclude_exts),
+            ", ".join(self.exclude_exts),  # pre-fill exclude field (optional)
             self.recursive
         )
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.include_exts, self.exclude_exts, self.recursive = dlg.get_settings()
+            # Unpack only 2 values (include + recursive)
+            self.include_exts, self.recursive = dlg.get_settings()
+    
+            # Manually parse exclude from the text field (user may have typed exclusions)
+            exclude_text = dlg.exclude_edit.text().strip()
+            self.exclude_exts = [e.strip().lower() for e in exclude_text.split(",") if e.strip()]
+    
             self.update_filter_status()
 
     def save_results(self):
@@ -621,10 +777,10 @@ class DuplicateFinder(QMainWindow):
         msg = []
         if self.include_exts:
             msg.append(f"Only {len(self.include_exts)} ext(s)")
-        elif self.exclude_exts:
-            msg.append(f"Excl. {len(self.exclude_exts)} ext(s)")
         else:
             msg.append("All files")
+        if self.exclude_exts:
+            msg.append(f"Excl. {len(self.exclude_exts)} ext(s)")
         msg.append(f"Recursive: {'Yes' if self.recursive else 'No'}")
         msg.append(f"Theme: {self.theme.capitalize()}")
         self.statusBar.showMessage(" | ".join(msg))
@@ -641,76 +797,116 @@ class DuplicateFinder(QMainWindow):
             return
 
         self.tree.clear()
-        self.progress.setVisible(True)
-        self.progress.setRange(0, 0)
+        self.progress_container.setVisible(True)
 
-        # Reset status before starting
+        # Hide ALL indicators first, then show only the selected one
+        self.progress_bar.setVisible(False)
+        self.scan_animation.setVisible(False)
+        self.scan_movie.stop()
+        self.emoji_label.setVisible(False)
+        self.emoji_timer.stop()
+        self.ascii_label.setVisible(False)
+        self.ascii_bar_timer.stop()
+        
+        if self.progress_style == "default_bar":
+            self.progress_bar.setVisible(True)
+        elif self.progress_style == "animated_gif":
+            self.scan_animation.setVisible(True)
+            self.scan_movie.start()
+        elif self.progress_style == "emoji":
+            self.emoji_label.setVisible(True)
+            self.emoji_timer.start(400)
+        elif self.progress_style == "ascii_bar":
+            self.ascii_label.setVisible(True)
+            self.ascii_bar_pos = 0
+            self.ascii_bar_direction = 1
+            self.ascii_bar_timer.start(40)
+
+        # Show Stop button, disable Start button
+        self.stop_btn.setVisible(True)
+        self.stop_btn.setEnabled(True)
+        self.scan_btn.setEnabled(False)          # ← use self.scan_btn
+
         self.statusBar.showMessage("Scan started...")
         self.scan_status_label.setText("Starting scan...")
 
         self.thread = ScanThread(path, self.include_exts, self.exclude_exts, self.recursive)
-
-        # Connect both signals
         self.thread.progress.connect(self.on_scan_progress)
         self.thread.finished.connect(self.on_scan_finished)
-
         self.thread.start()
 
     def on_scan_progress(self, count: int, current_folder: str):
-        display_folder = current_folder.replace(self.path_edit.text(), "").lstrip(os.sep)
-        if not display_folder:
-            display_folder = "(root)"
-
         self.scan_status_label.setText(
-            f"Scanning... {count:,} files  →  {display_folder}"
+            f"Scanning... {count:,} files"
         )
-
+        
     def on_scan_finished(self, duplicates: dict):
-        self.progress.setVisible(False)
-        self.scan_status_label.setText("Scan complete")
-        self.current_groups = duplicates
-        self.tree.clear()
+        # Stop and hide any active progress indicator
+        self.progress_container.setVisible(False)
 
-        count = 0
-        is_dark = (self.theme == "dark")
+        if self.progress_style == "default_bar":
+            self.progress_bar.setVisible(False)
+        elif self.progress_style == "animated_gif":
+            self.scan_movie.stop()
+            self.scan_animation.setVisible(False)
+        elif self.progress_style == "emoji":
+            self.emoji_timer.stop()
+            self.emoji_label.setVisible(False)
+        elif self.progress_style == "ascii_bar":
+            self.ascii_bar_timer.stop()
+            self.ascii_label.setVisible(False)
 
-        for key, files in duplicates.items():
-            if len(files) < 2:
-                continue
-            count += 1
-            group_item = QTreeWidgetItem([key[:60] + "..." if len(key) > 60 else key, "", "", ""])
+        # Handle the case where scan was interrupted/cancelled
+        if duplicates is None:  # explicitly cancelled
+            self.scan_status_label.setText("Scan cancelled")
+            self.statusBar.showMessage("Scan cancelled by user")
+        else:
+            # Normal completion
+            self.scan_status_label.setText("Scan complete")
+            self.current_groups = duplicates
 
-            # Group header styling
-            group_bg = QColor("#444444" if is_dark else "#d0d0d0")
-            group_fg = QColor("#ffffff" if is_dark else "#000000")
-            group_item.setBackground(0, group_bg)
-            group_item.setForeground(0, group_fg)
+            self.tree.clear()
+            count = 0
+            is_dark = (self.theme == "dark")
 
-            group_item.setFlags(group_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tree.addTopLevelItem(group_item)
+            for key, files in duplicates.items():
+                if len(files) < 2:
+                    continue
+                count += 1
+                group_item = QTreeWidgetItem([key[:60] + "..." if len(key) > 60 else key, "", "", ""])
+                group_bg = QColor("#444444" if is_dark else "#d0d0d0")
+                group_fg = QColor("#ffffff" if is_dark else "#000000")
+                group_item.setBackground(0, group_bg)
+                group_item.setForeground(0, group_fg)
+                group_item.setFlags(group_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                self.tree.addTopLevelItem(group_item)
 
-            for fullpath, size, basename in sorted(files, key=lambda x: x[1], reverse=True):
-                mb = round(size / (1024 * 1024), 2)
-                item = QTreeWidgetItem(["", basename, fullpath, f"{mb:.2f} MB"])
-                item.setCheckState(0, Qt.CheckState.Unchecked)
+                for fullpath, size, basename in sorted(files, key=lambda x: x[1], reverse=True):
+                    mb = round(size / (1024 * 1024), 2)
+                    item = QTreeWidgetItem(["", basename, fullpath, f"{mb:.2f} MB"])
+                    item.setCheckState(0, Qt.CheckState.Unchecked)
+                    item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)
 
-                # Force readable text colors for all columns in both themes
-                text_color = QColor("#000000") if not is_dark else QColor("#e8e8e8")   # black in light, light gray-white in dark
-                dim_color  = QColor("#333333") if not is_dark else QColor("#bbbbbb")   # darker gray in light, medium gray in dark
+                    text_color = QColor("#000000") if not is_dark else QColor("#e8e8e8")
+                    dim_color = QColor("#333333") if not is_dark else QColor("#bbbbbb")
 
-                item.setForeground(1, text_color)   # Filename column
-                item.setForeground(2, dim_color)    # Full path column (slightly dimmer)
-                item.setForeground(3, dim_color)    # Size column (slightly dimmer)
+                    item.setForeground(1, text_color)
+                    item.setForeground(2, dim_color)
+                    item.setForeground(3, dim_color)
 
-                group_item.addChild(item)
+                    group_item.addChild(item)
 
-            group_item.setExpanded(True)
+                group_item.setExpanded(True)
 
-        self.statusBar.showMessage(
-            f"Found {count} duplicate groups "
-            f"({sum(len(v) for v in duplicates.values())} files)"
-        )
+            self.statusBar.showMessage(
+                f"Found {count} duplicate groups "
+                f"({sum(len(v) for v in duplicates.values())} files)"
+            )
 
+        # Always clean up buttons when scan ends (normal or cancelled)
+        self.stop_btn.setVisible(False)
+        self.scan_btn.setEnabled(True)
+        
     def select_all(self):
         for i in range(self.tree.topLevelItemCount()):
             group = self.tree.topLevelItem(i)
