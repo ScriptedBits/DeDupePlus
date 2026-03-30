@@ -35,12 +35,12 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem,
     QMessageBox, QDialog, QFormLayout, QMenuBar, QStatusBar,
-    QCheckBox, QGroupBox, QComboBox, QTextEdit, QProgressBar
+    QCheckBox, QGroupBox, QComboBox, QTextEdit, QProgressBar, QMenu
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QDateTime, QSize, QTimer
 from PyQt6.QtGui import QColor, QMovie, QActionGroup
 
-__version__ = "1.7.9"
+__version__ = "1.8.1"
 
 def normalize_filename(filename: str) -> str:
     base = os.path.splitext(filename)[0]
@@ -87,15 +87,19 @@ class ExtensionsDialog(QDialog):
         presets_layout.setSpacing(6)
 
         self.video_cb = QCheckBox("Video files (.mp4, .mkv, .avi, .mov, ...)")
-        self.rom_cb = QCheckBox("Retro ROMs (.gb, .gba, .nes, .sfc, .n64, ...)")
+        self.rom_cb = QCheckBox("Retro ROMs (.gb, .gba, .nes, .sfc, .n64, .iso, .chd ...)")
         self.office_cb = QCheckBox("Office documents (.docx, .xlsx, .pptx, .odt, .pdf ...)")
         self.music_cb = QCheckBox("Music / Audio files (.mp3, .flac, .m4a, .wav, ...)")
+        self.image_cb = QCheckBox("Images (.jpg, .png, .gif, .bmp, .tiff, .heic, ...)")
+        self.ebook_cb = QCheckBox("Ebooks (.epub, .mobi, .pdf, .azw, ...)")
         self.archive_cb = QCheckBox("Archives / Zips (.zip, .rar, .7z, .tar.gz, ...)")
 
         presets_layout.addWidget(self.video_cb)
         presets_layout.addWidget(self.rom_cb)
         presets_layout.addWidget(self.office_cb)
         presets_layout.addWidget(self.music_cb)
+        presets_layout.addWidget(self.image_cb)
+        presets_layout.addWidget(self.ebook_cb)
         presets_layout.addWidget(self.archive_cb)
 
         # Buttons row
@@ -130,21 +134,54 @@ class ExtensionsDialog(QDialog):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         bottom_layout.addWidget(cancel_btn)
+        bottom_layout.addStretch()
 
         main_layout.addLayout(bottom_layout)
 
     def apply_presets(self):
         current = set()
         if self.video_cb.isChecked():
-            current.update({".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".m4v", ".ts", ".m2ts"})
+            current.update({
+                ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
+                ".mpg", ".mpeg", ".m4v", ".ts", ".m2ts", ".vob", ".divx",
+                ".3gp", ".rm", ".rmvb", ".f4v"
+            })
         if self.rom_cb.isChecked():
-            current.update({".gb", ".gbc", ".gba", ".nes", ".sfc", ".smc", ".n64", ".z64", ".nds", ".rom", ".zip"})
+            current.update({
+                ".a26", ".a52", ".a78", ".j64", ".lnx", ".col", ".iso",
+                ".rvz", ".xci", ".nsp", ".wbfs", ".wua", ".chd", ".gg",
+                ".sms", ".cso", ".3ds", ".gb", ".gbc", ".gba", ".nes",
+                ".sfc", ".smc", ".n64", ".z64", ".v64", ".nds", ".rom",
+                ".zip", ".bin", ".cue", ".gcm", ".dol", ".vpk", ".pkg"
+            })
         if self.office_cb.isChecked():
-            current.update({".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".xltx", ".ppt", ".pptx", ".pptm", ".odt", ".ods", ".odp", ".rtf", ".pdf"})
+            current.update({
+                ".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".xltx",
+                ".ppt", ".pptx", ".pptm", ".odt", ".ods", ".odp", ".rtf",
+                ".pdf", ".csv", ".txt", ".md", ".pages", ".numbers", ".key"
+            })
         if self.music_cb.isChecked():
-            current.update({".mp3", ".m4a", ".aac", ".flac", ".wav", ".aiff", ".aif", ".ogg", ".oga", ".wma", ".opus"})
+            current.update({
+                ".mp3", ".m4a", ".aac", ".flac", ".wav", ".aiff", ".aif",
+                ".ogg", ".oga", ".wma", ".opus", ".dsf", ".dff", ".ape"
+            })
         if self.archive_cb.isChecked():
-            current.update({".zip", ".zipx", ".rar", ".7z", ".tar", ".gz", ".tgz", ".tar.gz", ".bz2", ".tar.bz2", ".iso"})
+            current.update({
+                ".zip", ".zipx", ".rar", ".7z", ".tar", ".gz", ".tgz",
+                ".tar.gz", ".bz2", ".tar.bz2", ".iso", ".zst", ".xz",
+                ".cab", ".deb", ".rpm"
+            })
+        if self.image_cb.isChecked():
+            current.update({
+                ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif",
+                ".webp", ".heic", ".heif", ".raw", ".cr2", ".nef", ".arw",
+                ".dng", ".svg"
+            })
+        if self.ebook_cb.isChecked():
+            current.update({
+                ".epub", ".mobi", ".azw", ".azw3", ".fb2",
+                ".djvu", ".cbz", ".cbr", ".pdf"
+            })
         new_text = ", ".join(sorted(current)) if current else ""
         self.include_edit.setText(new_text)
 
@@ -154,6 +191,8 @@ class ExtensionsDialog(QDialog):
         self.office_cb.setChecked(False)
         self.music_cb.setChecked(False)
         self.archive_cb.setChecked(False)
+        self.image_cb.setChecked(False)
+        self.ebook_cb.setChecked(False)
         self.include_edit.clear()
 
     def get_settings(self):
@@ -191,36 +230,84 @@ class HelpDialog(QDialog):
         self.resize(680, 520)
         layout = QVBoxLayout(self)
         text = QTextEdit()
+        font = text.font()
+        font.setPointSize(11)  # adjust this number to your preference
+        text.setFont(font)
         text.setReadOnly(True)
         text.setMarkdown("""
-**DeDupe+ – Quick Help & Examples**
-**Main purpose**
-Find files with similar names (ignoring year tags, quality tags like 4K/1080p, etc.) and let you delete duplicates.
-**How name matching works**
-- file1.mp4 & file1.srt → considered duplicates
-- movie (2025).mkv & movie 4k (2025).mp4 → considered duplicates
-- Ignores case, years in (), [], common video tags (4k, hdr, web-dl, etc.)
-**Basic usage**
-1. Select folder/drive
-2. (optional) Set filters in **Options → Filter Extensions**
-3. Click **Start Scan**
-4. Check files to delete → **Delete Selected**
-**Extension filtering examples**
+**Main Purpose**
+Find files with similar names and let you safely delete duplicates. Intelligently ignores year tags, quality tags (4K, HDR, WEB-DL, etc.), case differences, and bracket/parentheses noise when comparing filenames.
+
+---
+
+**How Name Matching Works**
+- `file1.mp4` & `file1.srt` → considered duplicates
+- `movie (2025).mkv` & `movie 4K (2025).mp4` → considered duplicates
+- Ignores case, years in () or [], common video tags (4k, hdr, web-dl, remux, etc.)
+
+---
+
+**Basic Usage**
+1. Select a folder or drive using **Browse** or type a path directly
+2. Optionally set filters via **Options → Filter Extensions**
+3. Click **🔍 Start Scan** — use **⏹️ Stop Scan** to cancel at any time
+4. Review duplicate groups in the results tree
+5. Check files to delete, then click **🗑️ Delete Selected**
+
+---
+
+**Results Tree**
+- Each group shows files that are considered duplicates of each other
+- **Double-click** any file to open its location in Explorer / Finder
+- **Right-click** any file for a context menu with:
+  - Open File Location
+  - File Properties (size, dates, video resolution & duration if applicable)
+  - Check / Uncheck shortcuts
+
+---
+
+**Buttons**
+- **✅ Select All** / **❌ Deselect All** — check or uncheck all files at once
+- **🗑️ Delete Selected** — permanently deletes checked files (confirmation required)
+- **💾 Save Results** — export duplicate report as HTML or CSV
+- **🔄 Clear Results** — clears the results tree without deleting anything
+
+---
+
+**Extension Filtering**
+Use **Options → Filter Extensions** to control which files are scanned:
 - Only videos: include `.mp4, .mkv, .avi, .mov`
 - Skip thumbnails & logs: exclude `.jpg, .png, .txt, .nfo, .log`
-- Scan everything except junk: leave include blank, exclude `.jpg,.png,.db,.tmp`
-**Presets**
-Use the checkboxes in the extensions dialog for quick setup.
+- Scan everything except junk: leave include blank, exclude `.jpg, .png, .db, .tmp`
+
+Use the **Quick Include Presets** checkboxes for fast setup:
+- Video, Retro ROMs, Office Documents, Music/Audio, Archives
+
+---
+
+**Progress Animation**
+Choose your preferred scan indicator via **Options → Progress Animation**:
+- Default bar — standard Qt progress bar
+- Animated folder — animated GIF
+- Emoji rotation — 📁📂 cycling icons
+- Retro ASCII bar — scrolling `[████░░░░]` bar
+- None — text only
+
+---
+
 **Theme**
-Change in **Options → Theme** – setting saved for next launch.
-**Need help?**
+Change between Dark and Light via **Options → Theme** — saved automatically for next launch.
+
+---
+
+**Need Help?**
 Report issues or suggest features on GitHub:
 https://github.com/ScriptedBits/DeDupePlus
         """)
         layout.addWidget(text)
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
@@ -253,6 +340,7 @@ class AboutDialog(QDialog):
         )
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc.setStyleSheet("font-size: 16px;")
         layout.addWidget(desc)
 
         layout.addSpacing(20)
@@ -307,6 +395,7 @@ class AboutDialog(QDialog):
         close_btn.setStyleSheet("font-size: 14px; padding: 8px;")
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
+        btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
         if parent and parent.isVisible():
@@ -387,17 +476,17 @@ class DuplicateFinder(QMainWindow):
         self.setWindowTitle(f"🗂️ DeDupe+ v{__version__}")
         self.resize(1100, 700)
         self.checkmark_svg = self._write_checkmark_svg()
-
+        
         self.settings = QSettings("ScriptedBits", "DeDupePlus")
         # Progress style choices (stored in settings)
-        self.progress_style = self.settings.value("progress_style", "animated_gif", type=str)
+        self.progress_style = self.settings.value("progress_style", "ascii_bar", type=str)
         # Possible values: "default_bar", "animated_gif", "emoji", "none"
 
         self.include_exts = self.settings.value("include_exts", [], type=list)
         self.exclude_exts = self.settings.value("exclude_exts", [], type=list)
         self.recursive = self.settings.value("recursive", True, type=bool)
         self.theme = self.settings.value("theme", "dark", type=str)
-        last_path = self.settings.value("last_path", os.getcwd(), type=str)
+        last_path = self.settings.value("last_path", "", type=str)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -478,6 +567,10 @@ class DuplicateFinder(QMainWindow):
         self.tree.setAlternatingRowColors(True)
         self.tree.setSortingEnabled(True)
         self.tree.sortItems(3, Qt.SortOrder.DescendingOrder)
+        
+        self.tree.itemDoubleClicked.connect(self.open_file_location)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.show_context_menu)
 
         layout.addWidget(self.tree)
 
@@ -491,6 +584,7 @@ class DuplicateFinder(QMainWindow):
         delete_btn.setStyleSheet("background: #dc3545; color: white; font-weight: bold;")
         refresh = QPushButton("🔄 Clear Results")
         refresh.clicked.connect(lambda: self.tree.clear())
+        refresh.setStyleSheet("background: #17a2b8; color: white; font-weight: bold;")
         save_btn = QPushButton("💾 Save Results")
         save_btn.clicked.connect(self.save_results)
         save_btn.setStyleSheet("background: #007bff; color: white; font-weight: bold;")
@@ -498,9 +592,9 @@ class DuplicateFinder(QMainWindow):
         btn_row.addWidget(select_all)
         btn_row.addWidget(deselect_all)
         btn_row.addStretch()
-        btn_row.addWidget(save_btn)
-        btn_row.addStretch()
         btn_row.addWidget(delete_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(save_btn)
         btn_row.addWidget(refresh)
         layout.addLayout(btn_row)
 
@@ -546,6 +640,185 @@ class DuplicateFinder(QMainWindow):
 
         self.apply_theme()
         self.update_filter_status()
+
+    def show_context_menu(self, pos):
+        item = self.tree.itemAt(pos)
+        if not item or not item.text(2):  # ignore group headers
+            return
+
+        fullpath = item.text(2)
+        if not os.path.exists(fullpath):
+            return
+
+        menu = QMenu(self)
+        menu.addAction("📂 Open File Location", lambda: self.open_file_location(item, 0))
+        menu.addAction("ℹ️ Properties", lambda: self.show_file_properties(fullpath))
+        menu.addSeparator()
+        menu.addAction("✅ Check", lambda: item.setCheckState(0, Qt.CheckState.Checked))
+        menu.addAction("❌ Uncheck", lambda: item.setCheckState(0, Qt.CheckState.Unchecked))
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def show_file_properties(self, fullpath):
+        try:
+            stat = os.stat(fullpath)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not read file:\n{e}")
+            return
+
+        from datetime import datetime
+        size_bytes = stat.st_size
+        size_kb = size_bytes / 1024
+        size_mb = size_kb / 1024
+        size_gb = size_mb / 1024
+
+        if size_gb >= 1:
+            size_str = f"{size_gb:.2f} GB"
+        elif size_mb >= 1:
+            size_str = f"{size_mb:.2f} MB"
+        else:
+            size_str = f"{size_kb:.2f} KB"
+
+        created  = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+        modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+
+        ext = os.path.splitext(fullpath)[1].lower()
+        video_exts = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
+                      ".mpg", ".mpeg", ".m4v", ".ts", ".m2ts"}
+        is_video = ext in video_exts
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("File Properties")
+        dlg.setMinimumWidth(520)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # Filename header
+        name_label = QLabel(os.path.basename(fullpath))
+        name_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        name_label.setWordWrap(True)
+        layout.addWidget(name_label)
+
+        # Details form
+        form = QFormLayout()
+        form.setSpacing(6)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        def add_row(label, value):
+            val_label = QLabel(value)
+            val_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            val_label.setWordWrap(True)
+            form.addRow(f"<b>{label}</b>", val_label)
+
+        add_row("Full path:",  fullpath)
+        add_row("Size:",       f"{size_str}  ({size_bytes:,} bytes)")
+        add_row("Type:",       ext.upper().lstrip(".") if ext else "Unknown")
+        add_row("Modified:",   modified)
+        add_row("Created:",    created)
+        add_row("Accessed:",   accessed)
+
+        layout.addLayout(form)
+
+        # Video metadata section
+        if is_video:
+            layout.addWidget(QLabel(""))
+            video_header = QLabel("Video Info")
+            video_header.setStyleSheet("font-weight: bold; font-size: 13px;")
+            layout.addWidget(video_header)
+
+            video_form = QFormLayout()
+            video_form.setSpacing(6)
+
+            # Try to get resolution via pymediainfo
+            resolution_str = "Install pymediainfo for video details"
+            duration_str = ""
+            codec_str = ""
+            try:
+                from pymediainfo import MediaInfo
+                lib = self._get_mediainfo_library()
+                info = MediaInfo.parse(fullpath, library_file=lib)
+                for track in info.tracks:
+                    if track.track_type == "Video":
+                        w = track.width or ""
+                        h = track.height or ""
+                        if w and h:
+                            resolution_str = f"{w} × {h}"
+                        codec_str = track.codec_id or track.format or "Unknown"
+                    if track.track_type == "General":
+                        ms = track.duration
+                        if ms:
+                            secs = int(ms) // 1000
+                            mins, secs = divmod(secs, 60)
+                            hrs, mins = divmod(mins, 60)
+                            duration_str = f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs else f"{mins:02d}:{secs:02d}"
+            except ImportError:
+                pass
+            except Exception:
+                resolution_str = "Could not read video info"
+
+            def add_video_row(label, value):
+                if not value:
+                    return
+                val_label = QLabel(value)
+                val_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                video_form.addRow(f"<b>{label}</b>", val_label)
+
+            add_video_row("Resolution:", resolution_str)
+            add_video_row("Duration:",   duration_str)
+            add_video_row("Codec:",      codec_str)
+            layout.addLayout(video_form)
+
+        layout.addStretch()
+
+        # Close button
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setMinimumWidth(100)
+        close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(close_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+
+    def _get_mediainfo_library(self):
+        if getattr(sys, 'frozen', False):
+            # Running as compiled PyInstaller bundle
+            base = sys._MEIPASS
+            if sys.platform == "win32":
+                dll_path = os.path.join(base, "pymediainfo", "MediaInfo.dll")
+                if os.path.exists(dll_path):
+                    return dll_path
+                # Fallback — check root bundle dir
+                dll_path = os.path.join(base, "MediaInfo.dll")
+                if os.path.exists(dll_path):
+                    return dll_path
+            elif sys.platform.startswith("linux"):
+                return os.path.join(base, "libmediainfo.so.0")
+            elif sys.platform == "darwin":
+                return os.path.join(base, "libmediainfo.dylib")
+        return None  # Not frozen — pymediainfo finds it automatically
+
+    def open_file_location(self, item, column):
+        # Group header rows have no path — ignore them
+        fullpath = item.text(2)
+        if not fullpath or not os.path.exists(fullpath):
+            return
+
+        if sys.platform == "win32":
+            # Opens Explorer and highlights the specific file
+            import subprocess
+            subprocess.run(["explorer", "/select,", fullpath.replace("/", "\\")])
+        elif sys.platform == "darwin":
+            # Opens Finder and highlights the file
+            import subprocess
+            subprocess.run(["open", "-R", fullpath])
+        else:
+            # Linux — open the containing folder (can't highlight the file portably)
+            import subprocess
+            subprocess.run(["xdg-open", os.path.dirname(fullpath)])
 
     def _write_checkmark_svg(self):
         import tempfile
@@ -886,6 +1159,7 @@ class DuplicateFinder(QMainWindow):
                     item = QTreeWidgetItem(["", basename, fullpath, f"{mb:.2f} MB"])
                     item.setCheckState(0, Qt.CheckState.Unchecked)
                     item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)
+                    item.setToolTip(2, fullpath)
 
                     text_color = QColor("#000000") if not is_dark else QColor("#e8e8e8")
                     dim_color = QColor("#333333") if not is_dark else QColor("#bbbbbb")
