@@ -1,22 +1,26 @@
 # -*- mode: python ; coding: utf-8 -*-
-
 from PyInstaller.utils.hooks import collect_data_files
-import os, PySide6
+import os, sys, pymediainfo
 
 block_cipher = None
 
-# Collect PySide6 platform plugins
-datas = collect_data_files("PySide6", subdir="plugins/platforms")
+# Collect PyQt6 platform plugins
+datas = collect_data_files("PyQt6", subdir="plugins/platforms")
 
 # Include assets directory
 assets_data = [(os.path.abspath('assets') + '/**', 'assets')]
 
+# Bundle MediaInfo.dll from pymediainfo package
+mi_dir = os.path.dirname(pymediainfo.__file__)
+mi_dll = os.path.join(mi_dir, "MediaInfo.dll")
+mediainfo_binaries = [(mi_dll, 'pymediainfo')] if os.path.exists(mi_dll) else []
+
 a = Analysis(
     ['DeDupe+.py'],
     pathex=['.'],
-    binaries=[],
+    binaries=mediainfo_binaries,
     datas=assets_data + datas,
-    hiddenimports=[],
+    hiddenimports=['pymediainfo'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -45,7 +49,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # GUI application, no console
-    icon='assets/DepDupe-icon.ico',  # Windows requires .ico
-	version='version_info.txt',
+    console=False,
+    icon='assets/DepDupe-icon.ico',
+    version='version_info.txt',
 )

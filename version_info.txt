@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 6, 0, 0),
-    prodvers=(1, 6, 0, 0),
+    filevers=(1, 8, 1, 0),
+    prodvers=(1, 8, 1, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x4,
@@ -17,11 +17,11 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'ScriptedBits'),
             StringStruct(u'FileDescription', u'DeDupe+'),
-            StringStruct(u'FileVersion', u'1.6.0'),
-            StringStruct(u'LegalCopyright', u'(C) 2026 ScriptedBits'),  # Use (C) instead of ©
+            StringStruct(u'FileVersion', u'1.8.1'),
+            StringStruct(u'LegalCopyright', u'(C) 2026 ScriptedBits'),
             StringStruct(u'OriginalFilename', u'DeDupe+.exe'),
             StringStruct(u'ProductName', u'DeDupe+'),
-            StringStruct(u'ProductVersion', u'1.6.0')
+            StringStruct(u'ProductVersion', u'1.8.1')
           ]
         )
       ]
