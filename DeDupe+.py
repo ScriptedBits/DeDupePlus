@@ -35,28 +35,60 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem,
     QMessageBox, QDialog, QFormLayout, QMenuBar, QStatusBar,
-    QCheckBox, QGroupBox, QComboBox, QTextEdit, QProgressBar, QMenu
+    QCheckBox, QGroupBox, QComboBox, QTextEdit, QProgressBar, QMenu, QHeaderView
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QDateTime, QSize, QTimer
-from PyQt6.QtGui import QColor, QMovie, QActionGroup
+from PyQt6.QtGui import QColor, QMovie, QActionGroup, QAction
 
-__version__ = "1.8.1"
+from PyQt6.QtCore import qInstallMessageHandler, QtMsgType
+
+# Suppress annoying QBasicTimer warnings from background threads
+def qt_message_handler(mode, context, message):
+    if "QBasicTimer::stop" in message:
+        return  # Silently ignore these common warnings
+    # Print other important messages
+    if mode == QtMsgType.QtCriticalMsg:
+        print(f"CRITICAL: {message}", file=sys.stderr)
+    elif mode == QtMsgType.QtFatalMsg:
+        print(f"FATAL: {message}", file=sys.stderr)
+    elif mode == QtMsgType.QtWarningMsg:
+        print(f"WARNING: {message}", file=sys.stderr)
+    else:
+        print(message)
+
+qInstallMessageHandler(qt_message_handler)
+
+__version__ = "1.8.7"
 
 def normalize_filename(filename: str) -> str:
+    """Improved normalization - better at catching quality tags and suffixes."""
     base = os.path.splitext(filename)[0]
     base = base.lower().strip()
+
+    # Remove common duplicate / copy suffixes
+    base = re.sub(r'\s*(copy|duplicate|dup|remake|version|remastered)\s*\d*$', '', base, flags=re.I)
+    base = re.sub(r'\s*\(copy\s*\d*\)', '', base, flags=re.I)
+    base = re.sub(r'\s*-\s*copy\s*\d*$', '', base, flags=re.I)
+    base = re.sub(r'\s*copy\s*\d*$', '', base, flags=re.I)
+
+    # Remove common quality / version tags
+    base = re.sub(r'\s*(hd|uhd|4k|1080p|720p|2160p|hdr|remux|blu-?ray|web-dl|webrip|extended|uncut|director.?s? cut|theatrical|final|special edition)\s*', ' ', base, flags=re.I)
+
+    # Remove year tags and brackets
     base = re.sub(r'\s*\(\d{4}\)\s*', ' ', base)
     base = re.sub(r'\s*\[\d{4}\]\s*', ' ', base)
-    base = re.sub(r'\s*(4k|1080p|720p|2160p|hdr|remux|blu-?ray|web-dl|webrip)\s*', ' ', base, flags=re.I)
     base = re.sub(r'\s*[\(\[\{].*?[\)\]\}]\s*', ' ', base)
+
+    # Clean extra spaces
     base = re.sub(r'\s+', ' ', base).strip()
+
     return base
 
 class ExtensionsDialog(QDialog):
     def __init__(self, parent=None, current_include="", current_exclude="", recursive=True):
         super().__init__(parent)
         self.setWindowTitle("Filter Extensions")
-        self.setMinimumSize(620, 420)  # Clean size for content
+        self.setMinimumSize(720, 420)  # Clean size for content
 
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(12)
@@ -194,6 +226,7 @@ class ExtensionsDialog(QDialog):
         self.image_cb.setChecked(False)
         self.ebook_cb.setChecked(False)
         self.include_edit.clear()
+        self.exclude_edit.clear()
 
     def get_settings(self):
         inc = [e.strip().lower() for e in self.include_edit.text().split(",") if e.strip()]
@@ -231,7 +264,7 @@ class HelpDialog(QDialog):
         layout = QVBoxLayout(self)
         text = QTextEdit()
         font = text.font()
-        font.setPointSize(11)  # adjust this number to your preference
+        font.setPointSize(14)  # adjust this number to your preference
         text.setFont(font)
         text.setReadOnly(True)
         text.setMarkdown("""
@@ -282,6 +315,11 @@ Use **Options → Filter Extensions** to control which files are scanned:
 
 Use the **Quick Include Presets** checkboxes for fast setup:
 - Video, Retro ROMs, Office Documents, Music/Audio, Archives
+
+---
+
+**Show Video Resolution**
+Use **Options → Show Video Resolution** to show the video resolution of the duplicate files:
 
 ---
 
@@ -404,6 +442,52 @@ class AboutDialog(QDialog):
                 parent.y() + (parent.height() - self.height()) // 2
             )
 
+class ResolutionLoaderThread(QThread):
+    update_item = pyqtSignal(int, int, str)  # group_index, child_index, resolution
+    finished = pyqtSignal()
+
+    def __init__(self, tree, show_resolution):
+        super().__init__()
+        self.tree = tree
+        self.show_resolution = show_resolution
+
+    def run(self):
+        if not self.show_resolution:
+            return
+
+        for g in range(self.tree.topLevelItemCount()):
+            group = self.tree.topLevelItem(g)
+            for c in range(group.childCount()):
+                if self.isInterruptionRequested():
+                    return
+                child = group.child(c)
+                fullpath = child.data(3, Qt.ItemDataRole.UserRole)
+                if fullpath and self._is_video_file(child.text(1)):
+                    resolution = self._get_video_resolution(fullpath)
+                    if resolution:
+                        self.update_item.emit(g, c, resolution)
+                QThread.msleep(5)  # Small yield to keep system responsive
+        self.finished.emit()
+
+    def _is_video_file(self, filename: str) -> bool:
+        video_exts = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", 
+                      ".mpeg", ".m4v", ".ts", ".m2ts", ".vob", ".divx", ".3gp", ".f4v"}
+        return os.path.splitext(filename)[1].lower() in video_exts
+
+    def _get_video_resolution(self, fullpath: str) -> str:
+        try:
+            from pymediainfo import MediaInfo
+            info = MediaInfo.parse(fullpath)
+            for track in info.tracks:
+                if track.track_type == "Video":
+                    w = getattr(track, 'width', None)
+                    h = getattr(track, 'height', None)
+                    if w and h:
+                        return f"{w}×{h}"
+        except Exception:
+            pass
+        return ""
+
 class ScanThread(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(object)
@@ -476,10 +560,11 @@ class DuplicateFinder(QMainWindow):
         self.setWindowTitle(f"🗂️ DeDupe+ v{__version__}")
         self.resize(1100, 700)
         self.checkmark_svg = self._write_checkmark_svg()
-        
         self.settings = QSettings("ScriptedBits", "DeDupePlus")
+
         # Progress style choices (stored in settings)
         self.progress_style = self.settings.value("progress_style", "ascii_bar", type=str)
+        self.show_resolution = self.settings.value("show_resolution", False, type=bool)
         # Possible values: "default_bar", "animated_gif", "emoji", "none"
 
         self.include_exts = self.settings.value("include_exts", [], type=list)
@@ -560,10 +645,20 @@ class DuplicateFinder(QMainWindow):
         self.ascii_bar_chunk = 6
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Select files", "Filename", "Full Path", "Size (MB)"])
-        self.tree.setColumnWidth(0, 170)
-        self.tree.setColumnWidth(1, 250)
-        self.tree.setColumnWidth(2, 450)
+        self.tree.setHeaderLabels(["Select files", "Filename", "Full Path", "Size (MB)", "Resolution"])
+        self.tree.setColumnWidth(0, 100)   # Checkbox
+        self.tree.setColumnWidth(1, 280)  # Filename
+        self.tree.setColumnWidth(2, 420)  # Full Path
+        self.tree.setColumnWidth(3, 120)  # Size
+        self.tree.setColumnWidth(4, 145)  # Resolution
+        
+        self.tree.setColumnHidden(4, not self.show_resolution)
+        
+        # Center specific column headers
+        header_item = self.tree.headerItem()
+        header_item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)  # Size (MB)
+        header_item.setTextAlignment(4, Qt.AlignmentFlag.AlignCenter)  # Resolution
+        
         self.tree.setAlternatingRowColors(True)
         self.tree.setSortingEnabled(True)
         self.tree.sortItems(3, Qt.SortOrder.DescendingOrder)
@@ -606,6 +701,13 @@ class DuplicateFinder(QMainWindow):
         options_menu = menubar.addMenu("Options")
         options_menu.addAction("Filter Extensions...", self.show_extensions_dialog)
         options_menu.addAction("Theme...", self.show_theme_dialog)
+        
+        self.resolution_action = QAction("Show Video Resolution", self)
+        self.resolution_action.setCheckable(True)
+        self.resolution_action.setChecked(self.show_resolution)
+        self.resolution_action.triggered.connect(self.toggle_resolution)
+        options_menu.addAction(self.resolution_action)
+        
         progress_menu = options_menu.addMenu("Progress Animation")
         
         progress_action_group = QActionGroup(self)
@@ -640,6 +742,53 @@ class DuplicateFinder(QMainWindow):
 
         self.apply_theme()
         self.update_filter_status()
+
+    def _is_video_file(self, filename: str) -> bool:
+        video_exts = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mpg", 
+                      ".mpeg", ".m4v", ".ts", ".m2ts", ".vob", ".divx", ".3gp", ".f4v"}
+        return os.path.splitext(filename)[1].lower() in video_exts
+    
+    
+    def _get_video_resolution(self, fullpath: str) -> str:
+        """Return resolution like '1920x1080' or '3840x2160'"""
+        try:
+            from pymediainfo import MediaInfo
+            info = MediaInfo.parse(fullpath)
+            for track in info.tracks:
+                if track.track_type == "Video":
+                    w = getattr(track, 'width', None)
+                    h = getattr(track, 'height', None)
+                    if w and h:
+                        return f"{w}×{h}"
+        except Exception:
+            pass  # Fail silently if pymediainfo not installed or file unreadable
+        return ""
+
+    def toggle_resolution(self):
+        self.show_resolution = self.resolution_action.isChecked()
+        self.settings.setValue("show_resolution", self.show_resolution)
+        
+        # Optional: Refresh current results if any exist
+        if self.current_groups:
+            QMessageBox.information(self, "Refresh Required", 
+                                  "Resolution display changed.\nPlease run the scan again to update the view.")
+    def _load_resolutions_background(self):
+        """Load resolutions without freezing the UI"""
+        for i in range(self.tree.topLevelItemCount()):
+            group = self.tree.topLevelItem(i)
+            for j in range(group.childCount()):
+                child = group.child(j)
+                fullpath = child.data(3, Qt.ItemDataRole.UserRole)
+                if fullpath and self._is_video_file(child.text(1)):
+                    resolution = self._get_video_resolution(fullpath)
+                    if resolution:
+                        current_text = child.text(3)
+                        new_text = f"{current_text} • {resolution}"
+                        child.setText(3, new_text)
+                    # Small yield to keep UI responsive
+                    QThread.msleep(8)   # ~8ms delay per file
+
+        self.scan_status_label.setText("Scan complete with video resolutions")
 
     def show_context_menu(self, pos):
         item = self.tree.itemAt(pos)
@@ -869,12 +1018,16 @@ class DuplicateFinder(QMainWindow):
         self.update_filter_status()  # optional: refresh status if needed
 
     def closeEvent(self, event):
-        # Save settings on close
+        self.cleanup_resolution_thread()
+        
+        # Save settings
         self.settings.setValue("include_exts", self.include_exts)
         self.settings.setValue("exclude_exts", self.exclude_exts)
         self.settings.setValue("recursive", self.recursive)
         self.settings.setValue("theme", self.theme)
+        self.settings.setValue("show_resolution", self.show_resolution)
         self.settings.setValue("last_path", self.path_edit.text())
+        
         super().closeEvent(event)
 
     def apply_theme(self):
@@ -1028,7 +1181,7 @@ class DuplicateFinder(QMainWindow):
         import csv
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["Group Key", "Filename", "Full Path", "Size (MB)"])
+            writer.writerow(["Group Key", "Filename", "Full Path", "Size (MB)", "Resolution"])
 
             for key, files in self.current_groups.items():
                 if len(files) < 2:
@@ -1055,7 +1208,7 @@ class DuplicateFinder(QMainWindow):
         if self.exclude_exts:
             msg.append(f"Excl. {len(self.exclude_exts)} ext(s)")
         msg.append(f"Recursive: {'Yes' if self.recursive else 'No'}")
-        msg.append(f"Theme: {self.theme.capitalize()}")
+        #msg.append(f"Theme: {self.theme.capitalize()}")
         self.statusBar.showMessage(" | ".join(msg))
 
     def browse(self):
@@ -1069,6 +1222,8 @@ class DuplicateFinder(QMainWindow):
             QMessageBox.warning(self, "Error", "Invalid folder!")
             return
 
+        self.cleanup_resolution_thread()
+        
         self.tree.clear()
         self.progress_container.setVisible(True)
 
@@ -1114,72 +1269,90 @@ class DuplicateFinder(QMainWindow):
         )
         
     def on_scan_finished(self, duplicates: dict):
-        # Stop and hide any active progress indicator
-        self.progress_container.setVisible(False)
+        # Always clean up first
+        self.cleanup_resolution_thread()
 
-        if self.progress_style == "default_bar":
-            self.progress_bar.setVisible(False)
-        elif self.progress_style == "animated_gif":
-            self.scan_movie.stop()
-            self.scan_animation.setVisible(False)
-        elif self.progress_style == "emoji":
-            self.emoji_timer.stop()
-            self.emoji_label.setVisible(False)
-        elif self.progress_style == "ascii_bar":
-            self.ascii_bar_timer.stop()
-            self.ascii_label.setVisible(False)
-
-        # Handle the case where scan was interrupted/cancelled
-        if duplicates is None:  # explicitly cancelled
-            self.scan_status_label.setText("Scan cancelled")
-            self.statusBar.showMessage("Scan cancelled by user")
-        else:
-            # Normal completion
-            self.scan_status_label.setText("Scan complete")
-            self.current_groups = duplicates
-
-            self.tree.clear()
-            count = 0
-            is_dark = (self.theme == "dark")
-
-            for key, files in duplicates.items():
-                if len(files) < 2:
-                    continue
-                count += 1
-                group_item = QTreeWidgetItem([key[:60] + "..." if len(key) > 60 else key, "", "", ""])
-                group_bg = QColor("#444444" if is_dark else "#d0d0d0")
-                group_fg = QColor("#ffffff" if is_dark else "#000000")
-                group_item.setBackground(0, group_bg)
-                group_item.setForeground(0, group_fg)
-                group_item.setFlags(group_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-                self.tree.addTopLevelItem(group_item)
-
-                for fullpath, size, basename in sorted(files, key=lambda x: x[1], reverse=True):
-                    mb = round(size / (1024 * 1024), 2)
-                    item = QTreeWidgetItem(["", basename, fullpath, f"{mb:.2f} MB"])
-                    item.setCheckState(0, Qt.CheckState.Unchecked)
-                    item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)
-                    item.setToolTip(2, fullpath)
-
-                    text_color = QColor("#000000") if not is_dark else QColor("#e8e8e8")
-                    dim_color = QColor("#333333") if not is_dark else QColor("#bbbbbb")
-
-                    item.setForeground(1, text_color)
-                    item.setForeground(2, dim_color)
-                    item.setForeground(3, dim_color)
-
-                    group_item.addChild(item)
-
-                group_item.setExpanded(True)
-
-            self.statusBar.showMessage(
-                f"Found {count} duplicate groups "
-                f"({sum(len(v) for v in duplicates.values())} files)"
-            )
-
-        # Always clean up buttons when scan ends (normal or cancelled)
         self.stop_btn.setVisible(False)
         self.scan_btn.setEnabled(True)
+        self.progress_container.setVisible(False)
+
+        if duplicates is None:  # Cancelled
+            self.scan_status_label.setText("Scan cancelled")
+            self.statusBar.showMessage("Scan cancelled by user")
+            return
+
+        self.scan_status_label.setText("Populating results...")
+        self.current_groups = duplicates
+
+        self.tree.clear()
+        count = 0
+        is_dark = (self.theme == "dark")
+
+        for key, files in duplicates.items():
+            if len(files) < 2:
+                continue
+            count += 1
+
+            group_item = QTreeWidgetItem([key[:60] + "..." if len(key) > 60 else key, "", "", ""])
+            group_bg = QColor("#444444" if is_dark else "#d0d0d0")
+            group_fg = QColor("#ffffff" if is_dark else "#000000")
+            group_item.setBackground(0, group_bg)
+            group_item.setForeground(0, group_fg)
+            group_item.setFlags(group_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tree.addTopLevelItem(group_item)
+
+            for fullpath, size, basename in sorted(files, key=lambda x: x[1], reverse=True):
+                mb = round(size / (1024 * 1024), 2)
+                size_str = f"{mb:.2f} MB"
+
+                item = QTreeWidgetItem(["", basename, fullpath, size_str, ""])
+                item.setCheckState(0, Qt.CheckState.Unchecked)
+                item.setTextAlignment(3, Qt.AlignmentFlag.AlignRight)
+                item.setTextAlignment(4, Qt.AlignmentFlag.AlignCenter)
+                item.setData(3, Qt.ItemDataRole.UserRole, fullpath)
+
+                text_color = QColor("#000000") if not is_dark else QColor("#e8e8e8")
+                dim_color = QColor("#333333") if not is_dark else QColor("#bbbbbb")
+
+                item.setForeground(1, text_color)
+                item.setForeground(2, dim_color)
+                item.setForeground(3, dim_color)
+                item.setForeground(4, dim_color)
+
+                group_item.addChild(item)
+
+            group_item.setExpanded(True)
+
+        self.statusBar.showMessage(
+            f"Found {count} duplicate groups "
+            f"({sum(len(v) for v in duplicates.values())} files)"
+        )
+
+        # === DEFAULT SORT: Alphabetical by Group Name (column 0) ===
+        self.tree.sortItems(0, Qt.SortOrder.AscendingOrder)
+        self.tree.setSortingEnabled(True)
+
+        # Auto-resize Resolution column
+        self.tree.header().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        QTimer.singleShot(100, lambda: self.tree.setColumnWidth(4, 145))
+        
+        # Start resolution loading in background
+        if self.show_resolution and count > 0:
+            self.scan_status_label.setText("Loading video resolutions in background...")
+            self.resolution_thread = ResolutionLoaderThread(self.tree, True)
+            self.resolution_thread.update_item.connect(self._update_resolution)
+            self.resolution_thread.finished.connect(self._resolution_loading_finished)
+            self.resolution_thread.start()
+        else:
+            self.scan_status_label.setText("Scan complete")
+            
+    def _resolution_loading_finished(self):
+        self.scan_status_label.setText("Scan complete")
+        if hasattr(self, 'resolution_thread'):
+            self.resolution_thread = None
+        
+        # Final tight adjustment after resolutions are filled
+        QTimer.singleShot(50, lambda: self.tree.setColumnWidth(4, 145))
         
     def select_all(self):
         for i in range(self.tree.topLevelItemCount()):
@@ -1197,41 +1370,69 @@ class DuplicateFinder(QMainWindow):
 
     def delete_selected(self):
         to_delete = []
+        items_to_remove = []
+
+        # Collect checked items
         for i in range(self.tree.topLevelItemCount()):
             group = self.tree.topLevelItem(i)
-            for j in range(group.childCount()):
+            # Work backwards to safely remove items
+            for j in range(group.childCount() - 1, -1, -1):
                 child = group.child(j)
                 if child.checkState(0) == Qt.CheckState.Checked:
-                    to_delete.append(child.text(2))  # full path column
+                    fullpath = child.text(2)
+                    to_delete.append(fullpath)
+                    items_to_remove.append((group, child))
 
         if not to_delete:
-            QMessageBox.information(self, "Nothing selected", "Select files with the checkboxes first.")
+            QMessageBox.information(self, "Nothing selected", 
+                                  "Select files with the checkboxes first.")
             return
 
         reply = QMessageBox.question(
-            self,
-            "Confirm Delete",
+            self, "Confirm Delete",
             f"Delete {len(to_delete)} file(s) permanently?\n\nThis cannot be undone!",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
+
         if reply != QMessageBox.StandardButton.Yes:
             return
 
+        # Perform deletion
         deleted = 0
         errors = []
-        for path in to_delete:
+        for idx, path in enumerate(to_delete):
+            self.scan_status_label.setText(f"Deleting {idx+1}/{len(to_delete)}...")
             try:
                 os.remove(path)
                 deleted += 1
             except Exception as e:
                 errors.append(f"{path}: {e}")
 
-        QMessageBox.information(self, "Done", f"Deleted {deleted} file(s).\nErrors: {len(errors)}")
+            QApplication.processEvents()
+            QThread.msleep(8)
+
+        # Remove items from tree
+        for group, child in items_to_remove:
+            group.removeChild(child)
+
+        # Clean up empty groups
+        i = 0
+        while i < self.tree.topLevelItemCount():
+            if self.tree.topLevelItem(i).childCount() == 0:
+                self.tree.takeTopLevelItem(i)
+            else:
+                i += 1
+
+        # Final feedback
+        if deleted > 0:
+            QMessageBox.information(self, "Done", 
+                                  f"Successfully deleted {deleted} file(s).")
         if errors:
-            print("Delete errors:", errors)
+            QMessageBox.warning(self, "Errors", 
+                                f"Deleted {deleted} file(s).\n\nErrors:\n" + "\n".join(errors[:10]))
 
-        self.tree.clear()
-
+        self.scan_status_label.setText(f"Deleted {deleted} file(s)")
+        
     def show_help(self):
         dlg = HelpDialog(self)
         dlg.exec()
@@ -1239,6 +1440,38 @@ class DuplicateFinder(QMainWindow):
     def show_about(self):
         dlg = AboutDialog(self)
         dlg.exec()
+        
+    def _update_resolution(self, group_idx: int, child_idx: int, resolution: str):
+        """Update the Resolution column"""
+        group = self.tree.topLevelItem(group_idx)
+        if group is None:
+            return
+        child = group.child(child_idx)
+        if child is None:
+            return
+
+        child.setText(4, resolution)   # Column 4 = Resolution
+
+    def toggle_resolution(self):
+        self.show_resolution = self.resolution_action.isChecked()
+        self.settings.setValue("show_resolution", self.show_resolution)
+
+        # Show or hide the Resolution column
+        self.tree.setColumnHidden(4, not self.show_resolution)
+
+        if self.current_groups:
+            QMessageBox.information(self, "Refresh Required",
+                                  "Resolution column visibility changed.\n"
+                                  "Please run the scan again to see the effect.")
+                                  
+    def cleanup_resolution_thread(self):
+        """Safely stop the resolution thread"""
+        if hasattr(self, 'resolution_thread') and self.resolution_thread is not None:
+            if self.resolution_thread.isRunning():
+                self.resolution_thread.requestInterruption()
+                self.resolution_thread.quit()
+                self.resolution_thread.wait(600)   # Wait up to 600ms
+            self.resolution_thread = None
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
