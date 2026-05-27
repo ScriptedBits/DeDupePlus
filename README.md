@@ -7,6 +7,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/ScriptedBits/DeDupePlus?color=green)](https://github.com/ScriptedBits/DeDupePlus/releases)
 ![GitHub All Releases](https://img.shields.io/github/downloads/ScriptedBits/DeDupePlus/total)
 ![GitHub issues](https://img.shields.io/github/issues/ScriptedBits/DeDupePlus)
+![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/ScriptedBits/DeDupePlus/latest/total)
 
 **DeDupe+** is a cross-platform desktop application that helps you find and remove **duplicate files** by intelligently matching filenames — even when they have different extensions, quality tags (4K, HDR, WEB-DL), years in parentheses/brackets, or minor variations.
 
