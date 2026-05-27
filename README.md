@@ -22,8 +22,8 @@ https://github.com/ScriptedBits/DeDupePlus
 
 - **Flexible extension filtering**  
   - Include only specific types (e.g. videos + subtitles)  
-  - Exclude unwanted files (e.g. `.jpg`, `.nfo`, `.txt`)  
-  - Quick presets: **Video files** & **Retro ROMs**
+  - Exclude unwanted files (e.g. `.jpg`, `.nfo`, `.txt`, `.srt`)  
+  - Quick presets: **Video files** , **Retro ROMs** , **Office Documents**, **Music**, **Images**, **Archives** & More!
 
 - **Light & Dark theme support** (saved between sessions)
 
@@ -35,6 +35,8 @@ https://github.com/ScriptedBits/DeDupePlus
 
 - **Safe deletion** with confirmation dialog
 
+- **Display Video resolutions** (Turn on in the Options menu)
+
 - **Cross-platform**: Windows, macOS, Linux
 
 - **Portable** – no installation required (just run the `.py` or compiled executable)
@@ -42,8 +44,14 @@ https://github.com/ScriptedBits/DeDupePlus
 ## Screenshots
 
 ### Dark Mode
+
+ The Main screen:
  
-<img width="824" height="547" alt="DeDupe+ main screen" src="https://github.com/user-attachments/assets/542db951-9306-4763-bf06-6917253c1c64" />
+<img width="823" height="548" alt="DeDupe+-main screen" src="https://github.com/user-attachments/assets/d74d7023-a7df-4cdb-a595-9b05f74641fc" />
+
+Choose from different filter packs:
+
+<img width="541" height="384" alt="DeDupe+-filters screen" src="https://github.com/user-attachments/assets/586f171c-2793-46d8-97de-e94d33389f24" />
 
 
 ## Requirements
@@ -60,4 +68,4 @@ git clone https://github.com/ScriptedBits/DeDupePlus.git
 cd DeDupePlus
 pip install -r requirements.txt    # if you create one, otherwise:
 pip install PyQt6
-python DepDup+v1.5.py              # or whatever your main file is named
+python DepDup+v1.x.x.py              # or whatever your main file is named
